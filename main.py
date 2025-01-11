@@ -1,114 +1,129 @@
-import telebot
+from telethon import TelegramClient, events, Button
+from telethon.tl.functions.channels import GetParticipantsRequest, GetFullChannelRequest
+from telethon.tl.types import ChannelParticipantsSearch, ChatAdminRights
+import datetime
 import os
-import zipfile
-import subprocess
-import time
 
-# قراءة التوكن من Environment Variables
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+token = ("7708671431:AAFaZYNrCFWm0quZ5Coe284jTxzqnfk-coU")
+api_id = ("27430835")  # أضف ID الخاص بك هنا
+api_hash = ("99a495c31546000c0768945e6d1e8953")  # أضف API Hash الخاص بك هنا
 
-if not BOT_TOKEN:
-    raise ValueError("الرجاء ضبط متغير البيئة BOT_TOKEN لتشغيل البوت.")
+client = TelegramClient("L7N", api_id, api_hash).start(bot_token=token)
 
-bot = telebot.TeleBot(BOT_TOKEN)
+user_state = {}
 
-# المجلد الذي سيُحفظ فيه المشروع
-BASE_DIR = "/tmp/uploaded_projects"
+async def removeall(username, count=None):
+    if not username or not username.startswith('@'):
+        return "- ارسل يوزر القناة مع **(@)**"
 
-# التأكد من وجود المجلد
-if not os.path.exists(BASE_DIR):
-    os.makedirs(BASE_DIR)
-
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "مرحبًا! أرسل لي ملف ZIP يحتوي على مشروعك مع ملف Procfile.")
-
-@bot.message_handler(content_types=['document'])
-def handle_document(message):
     try:
-        # تنزيل الملف
-        bot.reply_to(message, "جاري تنزيل الملف...")
-        start_time = time.time()
+        channel = await client.get_entity(username)
+        memsCh = await client(GetParticipantsRequest(
+            channel, ChannelParticipantsSearch(''), 0, 100, hash=0
+        ))
 
-        file_id = message.document.file_id
-        file_info = bot.get_file(file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
+        users = memsCh.users
+        up = 0
 
-        # اسم الملف
-        file_name = message.document.file_name
-        file_path = os.path.join(BASE_DIR, file_name)
-
-        with open(file_path, "wb") as f:
-            f.write(downloaded_file)
-
-        elapsed_time = time.time() - start_time
-        bot.reply_to(message, f"تم تنزيل الملف في {elapsed_time:.2f} ثانية! جاري فك الضغط...")
-
-        # فك ضغط الملف
-        if file_name.endswith(".zip"):
+        for user in users:
+            if count is not None and up >= count:
+                break
             try:
-                project_dir = os.path.join(BASE_DIR, file_name.replace(".zip", ""))
-                with zipfile.ZipFile(file_path, 'r') as zip_ref:
-                    zip_ref.extractall(project_dir)
-                bot.reply_to(message, "تم فك الضغط بنجاح! جاري البحث عن ملف Procfile...")
-                process_project(project_dir, message)
-            except zipfile.BadZipFile as e:
-                bot.reply_to(message, f"الملف غير صالح: {str(e)}")
-            except Exception as e:
-                bot.reply_to(message, f"حدث خطأ أثناء فك الضغط: {str(e)}")
-        else:
-            bot.reply_to(message, "الرجاء إرسال ملف ZIP فقط.")
-    except Exception as e:
-        bot.reply_to(message, f"حدث خطأ أثناء معالجة الملف: {str(e)}")
-
-def process_project(project_dir, message):
-    try:
-        # البحث عن ملف Procfile
-        procfile_path = find_file("Procfile", project_dir)
-        if not procfile_path:
-            bot.reply_to(message, "ملف Procfile غير موجود داخل المشروع!")
-            return
-
-        bot.reply_to(message, f"تم العثور على ملف Procfile في: {procfile_path}")
-
-        # تشغيل المشروع
-        run_procfile(procfile_path, message)
-    except Exception as e:
-        bot.reply_to(message, f"حدث خطأ أثناء معالجة المشروع: {str(e)}")
-
-def find_file(file_name, search_dir):
-    """البحث عن ملف معين في جميع المجلدات الفرعية."""
-    for root, dirs, files in os.walk(search_dir):
-        if file_name in files:
-            return os.path.join(root, file_name)
-    return None
-
-def run_procfile(procfile_path, message):
-    try:
-        # قراءة ملف Procfile
-        with open(procfile_path, "r") as f:
-            lines = f.readlines()
-
-        # البحث عن السطر الذي يبدأ بـ worker
-        for line in lines:
-            if line.startswith("worker:"):
-                # استخراج الأمر بعد "worker:"
-                command = line.split("worker:")[1].strip()
-                bot.reply_to(message, f"جاري تشغيل الأمر: {command}")
-
-                # التأكد من التوافق مع البيئة
-                if "bash" not in command and "sh" not in command:
-                    bot.reply_to(message, "يجب أن يكون الأمر متوافقًا مع البيئة السحابية.")
-                    return
-
-                # تشغيل الأمر
-                process = subprocess.Popen(command, shell=True, cwd=os.path.dirname(procfile_path))
-                bot.reply_to(message, f"تم تشغيل المشروع بنجاح! PID: {process.pid}")
-                return
+                memCh = await client.get_permissions(channel, user.id)
+                if not isinstance(memCh, ChatAdminRights):
+                    await client.kick_participant(channel, user.id)
+                    up += 1
+                else:
+                    pass
+            except:
+                continue
         
-        bot.reply_to(message, "لم يتم العثور على تعريف worker في ملف Procfile!")
+        return f"**- تم حذف :** `{up}` **من الاعضاء !**"
     except Exception as e:
-        bot.reply_to(message, f"حدث خطأ أثناء تشغيل Procfile: {str(e)}")
+        return str(e)
 
-# بدء تشغيل البوت
-bot.polling()
+async def informationCh(username):
+    if not username or not username.startswith('@'):
+        return "- ارسل يوزر القناة مع **(@)**"
+
+    try:
+        channel = await client.get_entity(username)
+        information = await client(GetFullChannelRequest(channel))
+        name = information.chats[0].title
+        
+        participants_count = information.full_chat.participants_count
+        if "@" in username:
+            username = username.split("@")[1]
+        return (
+            f"""اسم القناة: [{name}](t.me/{username})
+عدد الأعضاء: {participants_count}"""
+        )
+    except Exception as e:
+        return str(e)
+
+@client.on(events.NewMessage(pattern='/o'))
+async def start(event):
+    user_state[event.sender_id] = ""
+    await event.respond(
+        "- اهلا بك في بوت تفليش القنوات عن طريق توكن البوت ! ** اختر من الازرار :**",
+        buttons=[
+            [Button.inline('حذف عدد من الاعضاء')],
+            [Button.inline('حذف كل الأعضاء')],
+            [Button.inline('جلب معلومات القنوات')],
+            [Button.inline('عرض الوقت')],
+            [Button.url('مبرمج البوت', 'https://t.me/U_1_S')],
+            [Button.url('قناة البرمجة', 'https://t.me/R_C_H')]
+        ]
+    )
+
+@client.on(events.CallbackQuery(data='حذف عدد من الاعضاء'))
+async def mem(event):
+    user_state[event.sender_id] = "num"
+    await event.respond("**- ارسل عدد الاعضاء الذي تريد حذفهم**")
+
+@client.on(events.CallbackQuery(data='حذف كل الأعضاء'))
+async def prompt_channel_for_all(event):
+    user_state[event.sender_id] = "removeall"
+    await event.respond("**أدخل معرف القناة لحذف جميع الأعضاء:**")
+
+@client.on(events.CallbackQuery(data='جلب معلومات القنوات'))
+async def prompt_channel_info(event):
+    user_state[event.sender_id] = "chinfo"
+    await event.respond("**أدخل معرف القناة للحصول على معلوماتها:**")
+
+@client.on(events.CallbackQuery(data='عرض الوقت'))
+async def show_time(event):
+    times = datetime.datetime.now().strftime("%I:%M:%S")
+    await event.respond(f"**- الوقت الان :** `{times}`")
+
+@client.on(events.NewMessage)
+async def handle_messages(event):
+    user_id = event.sender_id
+    user_input = event.message.text
+
+    if user_id in user_state:
+        state = user_state[user_id]
+
+        if state == "num" and user_input.isdigit():
+            user = int(user_input)
+            user_state[user_id] = {'action': 'remove_some', 'count': user}
+            await event.respond("- ارسل يوزر القناة مع **(@)**")
+        
+        elif state == "removeall" and user_input.startswith('@'):
+            username = user_input
+            response = await removeall(username)
+            await event.respond(response)
+            
+        elif state == "chinfo" and user_input.startswith('@'):
+            username = user_input
+            info = await informationCh(username)
+            await event.respond(info, link_preview=False)
+            user_state.pop(user_id, None)
+        
+        elif isinstance(state, dict) and state.get('action') == 'remove_some' and user_input.startswith('@'):
+            channel_username = user_input
+            num = state.get('count')
+            response = await removeall(channel_username, num)
+            await event.respond(response)
+
+client.run_until_disconnected()
